@@ -20,9 +20,12 @@ var messagesList = tview.NewList().ShowSecondaryText(false).SetMainTextColor(tce
 var flex = tview.NewFlex()
 var inputBox = tview.NewInputField().SetLabel("Enter a Message: ").SetFieldTextColor(tcell.ColorGreen)
 
+var lastestStreamIDs map[string]string
+
 func main() {
 	//set up flexbox and set it as root
 	messagesList.SetBorderPadding(0, 0, 2, 0)
+	messagesList.SetSelectedStyle(tcell.StyleDefault)
 	reader := bufio.NewScanner(os.Stdin)
 	fmt.Print("Please enter your username: ")
 	reader.Scan()
@@ -32,8 +35,8 @@ func main() {
 	reader.Scan()
 	password := reader.Text()
 	// fmt.Println(username, password)
+
 	client, err := valkey.NewClient(valkey.ClientOption{InitAddress: []string{"192.168.50.238:6379"}, Username: username, Password: password, DisableCache: true})
-	// client, err := valkey.NewClient(valkey.ClientOption{InitAddress: []string{"192.168.50.238:6379"}})
 	if err != nil {
 		println("Client error")
 		panic(err)
@@ -64,7 +67,10 @@ func main() {
 	// 	}
 	// 	return event
 	// })
-	go receiveMessages(ctx, client, app, username)
+
+	//spin off message receving into it's own go routine
+	//this way we will still recieve messages
+	go receiveMessages(ctx, client, app)
 	if err := app.SetRoot(flex, true).EnableMouse(true).Run(); err != nil {
 		panic(err)
 	}
@@ -88,15 +94,69 @@ func main() {
 	// })
 }
 
-func receiveMessages(ctx context.Context, client valkey.Client, app *tview.Application, username string) {
-	err := client.Receive(ctx, client.B().Subscribe().Channel("chat").Build(), func(msg valkey.PubSubMessage) {
-		messages = append(messages, msg.Message)
-		// updateMessages()
-		messagesList.AddItem(msg.Message, "", rune(0), nil)
+func receiveMessages(ctx context.Context, client valkey.Client, app *tview.Application) {
+	id := ""
+	var message map[string][]valkey.XRangeEntry
+	var err error
+	for {
+		if id == "" {
+			message, err = client.Do(ctx, client.B().Xread().Block(0).Streams().Key("chat").Id("$").Build()).AsXRead()
+			if err != nil {
+				panic(err)
+			}
+			// parsedMessage = message["chat"][0].FieldValues["writer"]
+			id = message["chat"][0].ID
+		} else {
+			message, err = client.Do(ctx, client.B().Xread().Block(0).Streams().Key("chat").Id(id).Build()).AsXRead()
+			if err != nil {
+				panic(err)
+			}
+			// parsedMessage = message["chat"][0].FieldValues["writer"]
+			id = message["chat"][0].ID
+		}
+		// message, err := client.Do(ctx, client.B().Xread().Block(0).Streams().Key("chat").Id("$").Build()).AsXRead()
+		if err != nil {
+			fmt.Println(err.Error())
+		}
+		parsedMessage := message["chat"][0].FieldValues["writer"]
+		messages = append(messages, parsedMessage)
+		messagesList.AddItem(parsedMessage, "", rune(0), nil)
 		app.Draw()
-	})
-	if err != nil {
-		fmt.Println(err.Error())
+	}
+	// err := client.Receive(ctx, client.B().Subscribe().Channel("chat").Build(), func(msg valkey.PubSubMessage) {
+	// 	messages = append(messages, msg.Message)
+	// 	messagesList.AddItem(msg.Message, "", rune(0), nil)
+	// 	app.Draw()
+	// })
+}
+
+func readFromStream(stream string, ctx context.Context, client valkey.Client, app *tview.Application) {
+	id := ""
+	var message map[string][]valkey.XRangeEntry
+	var err error
+	for {
+		if id == "" {
+			message, err = client.Do(ctx, client.B().Xread().Block(0).Streams().Key(stream).Id("$").Build()).AsXRead()
+			if err != nil {
+				panic(err)
+			}
+			// parsedMessage = message["chat"][0].FieldValues["writer"]
+			id = message["chat"][0].ID
+		} else {
+			message, err = client.Do(ctx, client.B().Xread().Block(0).Streams().Key(stream).Id(id).Build()).AsXRead()
+			if err != nil {
+				panic(err)
+			}
+			// parsedMessage = message["chat"][0].FieldValues["writer"]
+			id = message["chat"][0].ID
+		}
+		// message, err := client.Do(ctx, client.B().Xread().Block(0).Streams().Key("chat").Id("$").Build()).AsXRead()
+		if err != nil {
+			fmt.Println(err.Error())
+		}
+		parsedMessage := message["chat"][0].FieldValues["writer"]
+		messages = append(messages, parsedMessage)
+		messagesList.AddItem(parsedMessage, "", rune(0), nil)
 	}
 }
 
