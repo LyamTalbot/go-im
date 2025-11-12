@@ -4,8 +4,13 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/csv"
 	"fmt"
+	"io"
+	"log"
 	"os"
+	"slices"
+	"strings"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -19,10 +24,15 @@ var app = tview.NewApplication()
 var messagesList = tview.NewList().ShowSecondaryText(false).SetMainTextColor(tcell.ColorGreen)
 var flex = tview.NewFlex()
 var inputBox = tview.NewInputField().SetLabel("Enter a Message: ").SetFieldTextColor(tcell.ColorGreen)
+var messagesBox = tview.NewTextView()
 
-var lastestStreamIDs map[string]string
+// Persistence Stuff
+var filePath = "./stream_id_records.csv"
+var latestStreamIDs map[string]string
 
 func main() {
+
+	latestStreamIDs = buildStreamIDMap(filePath)
 	//set up flexbox and set it as root
 	messagesList.SetBorderPadding(0, 0, 2, 0)
 	messagesList.SetSelectedStyle(tcell.StyleDefault)
@@ -46,7 +56,8 @@ func main() {
 	ctx := context.Background()
 
 	flex.SetDirection(tview.FlexRow).
-		AddItem(messagesList, 0, 6, true).
+		AddItem(messagesBox, 0, 6, true).
+		// AddItem(messagesList, 0, 6, true).
 		AddItem(tview.NewFlex().
 			// AddItem(tview.NewTextView().SetTextColor(tcell.ColorGreen).SetText("Send message"), 0, 1, false).
 			AddItem(inputBox, 0, 6, false), 0, 1, false).SetBorder(true)
@@ -70,6 +81,7 @@ func main() {
 
 	//spin off message receving into it's own go routine
 	//this way we will still recieve messages
+	rebuildMessagesList(ctx, client, app)
 	go receiveMessages(ctx, client, app)
 	if err := app.SetRoot(flex, true).EnableMouse(true).Run(); err != nil {
 		panic(err)
@@ -94,12 +106,45 @@ func main() {
 	// })
 }
 
+func rebuildMessagesList(ctx context.Context, client valkey.Client, app *tview.Application) {
+	// id := latestStreamIDs["chat"]
+	var message []valkey.XRangeEntry
+	var err error
+	message, err = client.Do(ctx, client.B().Xrevrange().Key("chat").End("+").Start("-").Count(100).Build()).AsXRange()
+	if err != nil {
+		panic(err)
+	}
+	// if id == "$" {
+	// 	message, err = client.Do(ctx, client.B().Xrevrange().Key("chat").End("+").Start("-").Count(100).Build()).AsXRange()
+	// 	if err != nil {
+	// 		fmt.Println("No ID supplied, restoring last 100 messages")
+	// 		panic(err)
+	// 	}
+	// } else {
+	// 	message, err = client.Do(ctx, client.B().Xrevrange().Key("chat").End(id).Start("-").Count(100).Build()).AsXRange()
+	// 	if err != nil {
+	// 		fmt.Println("ID supplied, restoring previous 100 messages")
+	// 		panic(err)
+	// 	}
+	// }
+	slices.Reverse(message)
+	for _, entry := range message {
+		messages = append(messages, entry.FieldValues["writer"])
+		// messagesList.AddItem(entry.FieldValues["writer"], "", rune(0), nil)
+		messagesBox.SetTextColor(tcell.ColorLightGreen)
+		messagesBox.SetText(messagesBox.GetText(true) + "\n" + entry.FieldValues["writer"])
+		messagesBox.ScrollToEnd()
+	}
+	// app.Draw()
+
+}
+
 func receiveMessages(ctx context.Context, client valkey.Client, app *tview.Application) {
-	id := ""
 	var message map[string][]valkey.XRangeEntry
 	var err error
 	for {
-		if id == "" {
+		id := latestStreamIDs["chat"]
+		if id == "$" {
 			message, err = client.Do(ctx, client.B().Xread().Block(0).Streams().Key("chat").Id("$").Build()).AsXRead()
 			if err != nil {
 				panic(err)
@@ -120,7 +165,10 @@ func receiveMessages(ctx context.Context, client valkey.Client, app *tview.Appli
 		}
 		parsedMessage := message["chat"][0].FieldValues["writer"]
 		messages = append(messages, parsedMessage)
-		messagesList.AddItem(parsedMessage, "", rune(0), nil)
+		// messagesList.AddItem(parsedMessage, "", rune(0), nil)
+		messagesBox.SetText(messagesBox.GetText(true) + "\n" + parsedMessage)
+		latestStreamIDs["chat"] = id
+		saveStreamIDs(latestStreamIDs)
 		app.Draw()
 	}
 	// err := client.Receive(ctx, client.B().Subscribe().Channel("chat").Build(), func(msg valkey.PubSubMessage) {
@@ -157,6 +205,68 @@ func readFromStream(stream string, ctx context.Context, client valkey.Client, ap
 		parsedMessage := message["chat"][0].FieldValues["writer"]
 		messages = append(messages, parsedMessage)
 		messagesList.AddItem(parsedMessage, "", rune(0), nil)
+	}
+}
+
+func buildStreamIDMap(filePath string) map[string]string {
+	var lastestStreamIDs = make(map[string]string)
+	file, err := os.Open(filePath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer file.Close()
+
+	data := make([]byte, 100)
+	for {
+		n, err := file.Read(data)
+		if err != nil && err != io.EOF {
+			panic(err)
+		}
+		if n == 0 {
+			break
+		}
+	}
+
+	r := csv.NewReader(strings.NewReader(string(data)))
+	for {
+		record, err := r.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			panic(err)
+		}
+		if len(record) > 1 {
+			lastestStreamIDs[record[0]] = strings.TrimSpace(record[1])
+		}
+	}
+	fmt.Println("Stream ID Map: ", lastestStreamIDs)
+	return lastestStreamIDs
+}
+
+func saveStreamIDs(streamLatestIDs map[string]string) {
+	streamIDsArray := make([][]string, 1)
+	for key, value := range streamLatestIDs {
+		streamIDsArray = append(streamIDsArray, []string{key, value})
+	}
+	file, err := os.Open(filePath)
+	if err != nil {
+		panic(err)
+	}
+	w := csv.NewWriter(file)
+
+	for _, record := range streamIDsArray {
+		if err := w.Write(record); err != nil {
+			panic(err)
+		}
+	}
+
+	//write buffered data to the underlying writer
+	w.Flush()
+
+	//check for errors
+	if err := w.Error(); err != nil {
+		panic(err)
 	}
 }
 
