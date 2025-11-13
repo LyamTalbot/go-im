@@ -11,17 +11,27 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 	"github.com/valkey-io/valkey-go"
 )
 
+// message struct so I can marshall and unmarshall messages and have a little bit more information?
+// will make it easier to construct and deconstruct/parse messages
+type Message_t struct {
+	Username string
+	Message  string
+	Time     time.Time
+}
+
 var messages = make([]string, 0)
 
 // tview
 var app = tview.NewApplication()
-var messagesList = tview.NewList().ShowSecondaryText(false).SetMainTextColor(tcell.ColorGreen)
+
+// var messagesList = tview.NewList().ShowSecondaryText(false).SetMainTextColor(tcell.ColorGreen)
 var flex = tview.NewFlex()
 var inputBox = tview.NewInputField().SetLabel("Enter a Message: ").SetFieldTextColor(tcell.ColorGreen)
 var messagesBox = tview.NewTextView()
@@ -30,12 +40,18 @@ var messagesBox = tview.NewTextView()
 var filePath = "./stream_id_records.csv"
 var latestStreamIDs map[string]string
 
+// chatDataStores
+// var messageWindows = make(map[string]tview.TextView)
+var messageHistories = make(map[string]string)
+
 func main() {
 
 	latestStreamIDs = buildStreamIDMap(filePath)
 	//set up flexbox and set it as root
-	messagesList.SetBorderPadding(0, 0, 2, 0)
-	messagesList.SetSelectedStyle(tcell.StyleDefault)
+	// messagesList.SetBorderPadding(0, 0, 2, 0)
+	// messagesList.SetSelectedStyle(tcell.StyleDefault)
+	messagesBox.SetBackgroundColor(tcell.ColorBlack)
+	// messagesBox.SetTextStyle()
 	reader := bufio.NewScanner(os.Stdin)
 	fmt.Print("Please enter your username: ")
 	reader.Scan()
@@ -44,6 +60,8 @@ func main() {
 	fmt.Print("Please enter your password: ")
 	reader.Scan()
 	password := reader.Text()
+	// username := "lyam"
+	// password := "0"
 	// fmt.Println(username, password)
 
 	client, err := valkey.NewClient(valkey.ClientOption{InitAddress: []string{"192.168.50.238:6379"}, Username: username, Password: password, DisableCache: true})
@@ -62,8 +80,10 @@ func main() {
 			// AddItem(tview.NewTextView().SetTextColor(tcell.ColorGreen).SetText("Send message"), 0, 1, false).
 			AddItem(inputBox, 0, 6, false), 0, 1, false).SetBorder(true)
 	inputBox.SetDoneFunc(func(key tcell.Key) {
-		newMessage := username + ": " + inputBox.GetText()
-		err := client.Do(ctx, client.B().Publish().Channel("chat").Message(newMessage).Build()).Error()
+		// newMessage := username + ": " + inputBox.GetText()
+		message := inputBox.GetText()
+		err := client.Do(ctx, client.B().Xadd().Key("chat").Id("*").FieldValue().FieldValue("writer", message).Build()).Error()
+		// err := client.Do(ctx, client.B().Publish().Channel("chat").Message(newMessage).Build()).Error()
 		if err != nil {
 			panic(err.Error())
 		}
@@ -168,6 +188,7 @@ func receiveMessages(ctx context.Context, client valkey.Client, app *tview.Appli
 		// messagesList.AddItem(parsedMessage, "", rune(0), nil)
 		messagesBox.SetText(messagesBox.GetText(true) + "\n" + parsedMessage)
 		latestStreamIDs["chat"] = id
+		messagesBox.ScrollToEnd()
 		saveStreamIDs(latestStreamIDs)
 		app.Draw()
 	}
@@ -204,7 +225,7 @@ func readFromStream(stream string, ctx context.Context, client valkey.Client, ap
 		}
 		parsedMessage := message["chat"][0].FieldValues["writer"]
 		messages = append(messages, parsedMessage)
-		messagesList.AddItem(parsedMessage, "", rune(0), nil)
+		// messagesList.AddItem(parsedMessage, "", rune(0), nil)
 	}
 }
 
@@ -241,15 +262,17 @@ func buildStreamIDMap(filePath string) map[string]string {
 		}
 	}
 	fmt.Println("Stream ID Map: ", lastestStreamIDs)
+	file.Close()
 	return lastestStreamIDs
 }
 
 func saveStreamIDs(streamLatestIDs map[string]string) {
-	streamIDsArray := make([][]string, 1)
+	streamIDsArray := make([][]string, 0)
 	for key, value := range streamLatestIDs {
-		streamIDsArray = append(streamIDsArray, []string{key, value})
+		streamIDsArray = append(streamIDsArray, []string{key, strings.TrimSpace(value)})
 	}
-	file, err := os.Open(filePath)
+
+	file, err := os.OpenFile(filePath, os.O_RDWR, 0660)
 	if err != nil {
 		panic(err)
 	}
@@ -270,11 +293,11 @@ func saveStreamIDs(streamLatestIDs map[string]string) {
 	}
 }
 
-func updateMessages() {
-	for index, message := range messages {
-		messagesList.AddItem(message, " ", rune(49+index), nil)
-	}
-}
+// func updateMessages() {
+// 	for index, message := range messages {
+// 		// messagesList.AddItem(message, " ", rune(49+index), nil)
+// 	}
+// }
 
 // func sendMessage(ctx context.Context, client valkey.Client, username string, message string) {
 // 	err := client.Do(ctx, client.B().Publish().Channel("lyam").Message(message).Build()).Error()
