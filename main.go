@@ -40,10 +40,8 @@ var filePath = "./stream_id_records.csv"
 var latestStreamIDs map[string]string
 
 // chatDataStores
-// var messageWindows = make(map[string]tview.TextView)
 var messageHistories = make(map[string]string)
 
-// var messageHistories = make(map[string]strings.Builder)
 // map of users (testing purposes just so I gen-generate the stream names and chat window names)
 // this will need to be moved to valkey and retreived if we don't have local copy
 var userChatWindows = map[string][]string{
@@ -74,8 +72,6 @@ func main() {
 	fmt.Print("Please enter your password: ")
 	reader.Scan()
 	password := reader.Text()
-	// username = "lyam"
-	// password := "0"
 
 	client, err := valkey.NewClient(valkey.ClientOption{InitAddress: []string{"192.168.50.238:6379"}, Username: username, Password: password, DisableCache: true})
 	if err != nil {
@@ -119,18 +115,6 @@ func main() {
 
 		}(page)
 	}
-	// flex.SetDirection(tview.FlexRow).
-	// 	AddItem(messagesBox, 0, 6, true).
-	// 	AddItem(tview.NewFlex().
-	// 		AddItem(inputBox, 0, 6, false), 0, 1, false).SetBorder(true)
-	// inputBox.SetDoneFunc(func(key tcell.Key) {
-	// 	message := inputBox.GetText()
-	// 	err := client.Do(ctx, client.B().Xadd().Key("chat").Id("*").FieldValue().FieldValue("writer", message).Build()).Error()
-	// 	if err != nil {
-	// 		panic(err.Error())
-	// 	}
-	// 	inputBox.SetText("")
-	// })
 
 	//spin off message receving into it's own go routine
 	//this way we will still recieve messages
@@ -175,29 +159,19 @@ func rebuildMessagesList(ctx context.Context, client valkey.Client, app *tview.A
 		messageBoxes[key].SetText(stringBuilder.String())
 		messageBoxes[key].ScrollToEnd()
 	}
-	// var stringBuilder strings.Builder
-	// var message []valkey.XRangeEntry
-	// var err error
-	// messagesBox.SetTextColor(tcell.ColorLightGreen)
-	// message, err = client.Do(ctx, client.B().Xrevrange().Key("chat").End("+").Start("-").Count(100).Build()).AsXRange()
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// slices.Reverse(message)
-	// for _, entry := range message {
-	// 	stringBuilder.WriteString(entry.FieldValues["value"] + "\n")
-	// 	messages = append(messages, entry.FieldValues["value"])
-	// 	messagesBox.SetText(stringBuilder.String())
-	// 	messagesBox.ScrollToEnd()
-	// }
 }
 
 func receiveMessages(ctx context.Context, client valkey.Client, app *tview.Application) {
-	// var message map[string][]valkey.XRangeEntry
-	// var err error
-	// var id string
 	keys := make([]string, 0)
-	for _, _ = range userChatWindows[username] {
+	//Need to make a list of IDs that is the same length as the number of streams we want to read from.
+	//I might try to find another way to do this
+	//But I'm pretty sure according to the valkey docs we need key_1, key_2, key_3 id_1, id_2, id_3 so I might have to stick with this.
+
+	// for _, _ = range userChatWindows[username] {
+	// 	keys = append(keys, "$")
+	// }
+	//this is a bit more concise and cleaner to read to lets use this.
+	for i := 0; i < len(userChatWindows[username]); i++ {
 		keys = append(keys, "$")
 	}
 	for {
@@ -211,60 +185,6 @@ func receiveMessages(ctx context.Context, client valkey.Client, app *tview.Appli
 		}
 		app.Draw()
 	}
-	// for _, element := range userChatWindows[username] {
-	// id = latestStreamIDs[element]
-	// if id == "$" || id == "" {
-	// 	message, err = client.Do(ctx, client.B().Xread().Block(0).Streams().Key(element).Id("$").Build()).AsXRead()
-	// 	if err != nil {
-	// 		panic(err)
-	// 	}
-	// 	id = message[element][0].ID
-	// } else {
-	// 	message, err = client.Do(ctx, client.B().Xread().Block(0).Streams().Key(element).Id(id).Build()).AsXRead()
-	// 	if err != nil {
-	// 		panic(err)
-	// 	}
-	// 	id = message[element][0].ID
-	// }
-	// message, err = client.Do(ctx, client.B().Xread().Streams().Key())
-	// parsedMessage := message[element][0].FieldValues["message"]
-	// messageBoxes[element].SetText(messageBoxes[element].GetText(true) + "\n" + parsedMessage)
-	// messages = append(messages, parsedMessage)
-	// latestStreamIDs[element] = id
-	// messageBoxes[element].ScrollToEnd()
-	// saveStreamIDs(latestStreamIDs)
-	// app.Draw()
-	// }
-	// for {
-	// 	id := latestStreamIDs["chat"]
-	// 	if id == "$" {
-	// 		message, err = client.Do(ctx, client.B().Xread().Block(0).Streams().Key("chat").Id("$").Build()).AsXRead()
-	// 		if err != nil {
-	// 			panic(err)
-	// 		}
-	// 		// parsedMessage = message["chat"][0].FieldValues["writer"]
-	// 		id = message["chat"][0].ID
-	// 	} else {
-	// 		message, err = client.Do(ctx, client.B().Xread().Block(0).Streams().Key("chat").Id(id).Build()).AsXRead()
-	// 		if err != nil {
-	// 			panic(err)
-	// 		}
-	// 		// parsedMessage = message["chat"][0].FieldValues["writer"]
-	// 		id = message["chat"][0].ID
-	// 	}
-	// 	// message, err := client.Do(ctx, client.B().Xread().Block(0).Streams().Key("chat").Id("$").Build()).AsXRead()
-	// 	if err != nil {
-	// 		fmt.Println(err.Error())
-	// 	}
-	// 	parsedMessage := message["chat"][0].FieldValues["writer"]
-	// 	messages = append(messages, parsedMessage)
-	// 	// messagesList.AddItem(parsedMessage, "", rune(0), nil)
-	// 	messagesBox.SetText(messagesBox.GetText(true) + "\n" + parsedMessage)
-	// 	latestStreamIDs["chat"] = id
-	// 	messagesBox.ScrollToEnd()
-	// 	saveStreamIDs(latestStreamIDs)
-	// 	app.Draw()
-	// }
 }
 
 func readFromStream(stream string, ctx context.Context, client valkey.Client, app *tview.Application) {
