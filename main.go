@@ -193,34 +193,48 @@ func rebuildMessagesList(ctx context.Context, client valkey.Client, app *tview.A
 }
 
 func receiveMessages(ctx context.Context, client valkey.Client, app *tview.Application) {
-	var message map[string][]valkey.XRangeEntry
-	var err error
-	var id string
-	for {
-		for _, element := range userChatWindows[username] {
-			id = latestStreamIDs[element]
-			if id == "$" || id == "" {
-				message, err = client.Do(ctx, client.B().Xread().Block(0).Streams().Key(element).Id("$").Build()).AsXRead()
-				if err != nil {
-					panic(err)
-				}
-				id = message[element][0].ID
-			} else {
-				message, err = client.Do(ctx, client.B().Xread().Block(0).Streams().Key(element).Id(id).Build()).AsXRead()
-				if err != nil {
-					panic(err)
-				}
-				id = message[element][0].ID
-			}
-			parsedMessage := message[element][0].FieldValues["value"]
-			messageBoxes[element].SetText(messageBoxes[element].GetText(true) + "\n" + parsedMessage)
-			messages = append(messages, parsedMessage)
-			latestStreamIDs[element] = id
-			messageBoxes[element].ScrollToEnd()
-			saveStreamIDs(latestStreamIDs)
-			app.Draw()
-		}
+	// var message map[string][]valkey.XRangeEntry
+	// var err error
+	// var id string
+	keys := make([]string, 0)
+	for _, _ = range userChatWindows[username] {
+		keys = append(keys, "$")
 	}
+	for {
+		response, err := client.Do(ctx, client.B().Xread().Block(0).Streams().Key(userChatWindows[username]...).Id(keys...).Build()).AsXRead()
+		if err != nil {
+			panic(err)
+		}
+		for chatKey, message := range response {
+			messageBoxes[chatKey].SetText(messageBoxes[chatKey].GetText(true) + "\n" + message[0].FieldValues["message"])
+			messageBoxes[chatKey].ScrollToEnd()
+		}
+		app.Draw()
+	}
+	// for _, element := range userChatWindows[username] {
+	// id = latestStreamIDs[element]
+	// if id == "$" || id == "" {
+	// 	message, err = client.Do(ctx, client.B().Xread().Block(0).Streams().Key(element).Id("$").Build()).AsXRead()
+	// 	if err != nil {
+	// 		panic(err)
+	// 	}
+	// 	id = message[element][0].ID
+	// } else {
+	// 	message, err = client.Do(ctx, client.B().Xread().Block(0).Streams().Key(element).Id(id).Build()).AsXRead()
+	// 	if err != nil {
+	// 		panic(err)
+	// 	}
+	// 	id = message[element][0].ID
+	// }
+	// message, err = client.Do(ctx, client.B().Xread().Streams().Key())
+	// parsedMessage := message[element][0].FieldValues["message"]
+	// messageBoxes[element].SetText(messageBoxes[element].GetText(true) + "\n" + parsedMessage)
+	// messages = append(messages, parsedMessage)
+	// latestStreamIDs[element] = id
+	// messageBoxes[element].ScrollToEnd()
+	// saveStreamIDs(latestStreamIDs)
+	// app.Draw()
+	// }
 	// for {
 	// 	id := latestStreamIDs["chat"]
 	// 	if id == "$" {
