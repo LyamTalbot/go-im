@@ -103,8 +103,16 @@ func main() {
 				}
 				inputBox.SetText("")
 			})
+			buttons := tview.NewFlex()
+			buttons.AddItem(tview.NewButton("Quit").SetSelectedFunc(func() {
+				app.Stop()
+			}), 0, 1, false)
+			buttons.AddItem(tview.NewButton("Next").SetSelectedFunc(func() {
+				pages.SwitchToPage(fmt.Sprintf("%v", (page+1)%pages.GetPageCount()))
+			}), 0, 1, false)
 			flex.AddItem(messagesBox, 0, 6, true)
 			flex.AddItem(inputBox, 0, 1, false)
+			flex.AddItem(buttons, 0, 1, false)
 			flex.SetBorder(true)
 			pages.AddPage(fmt.Sprintf("%v", page),
 				flex, true, true)
