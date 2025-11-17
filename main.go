@@ -112,7 +112,6 @@ func main() {
 			flex.SetBorder(true)
 			pages.AddPage(fmt.Sprintf("%v", page),
 				flex, true, true)
-
 		}(page)
 	}
 
