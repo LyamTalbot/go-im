@@ -50,7 +50,13 @@ var userChatWindows = map[string][]string{
 	"lyam":  {"ant:lyam", "louis:lyam"},
 }
 var username string
-var messageBoxes = make(map[string]*tview.TextView)
+
+// var messageBoxes = make(map[string]*tview.TextView)
+// try using a slice of textView
+// var messageBoxes = make(map[string][]*tview.TextView)
+// no that's probably a little annoying
+// make it a map[string]tview.Flex
+var messageBoxes = make(map[string]*tview.Flex)
 
 var logPath = "./test_log.txt"
 var logFile = os.File{}
@@ -87,9 +93,12 @@ func main() {
 			flex := tview.NewFlex()
 			flex.SetDirection(tview.FlexRow)
 			flex.SetTitle(userChatWindows[username][page])
-			messagesBox := tview.NewTextView()
-			messageBoxes[userChatWindows[username][page]] = messagesBox
-			messagesBox.SetTextColor(tcell.ColorLightGreen)
+			// messagesBox := tview.NewTextView()
+			// messageBoxes[userChatWindows[username][page]] = *tview.NewFlex()
+			// messagesBox.SetTextColor(tcell.ColorLightGreen)
+			innerFlex := tview.NewFlex()
+			innerFlex.SetDirection(tview.FlexRow)
+			messageBoxes[userChatWindows[username][page]] = innerFlex
 			inputBox := tview.NewInputField().SetLabel("Enter a Message: ").SetFieldTextColor(tcell.ColorGreen)
 			inputBox.SetDoneFunc(func(key tcell.Key) {
 				message := inputBox.GetText()
@@ -106,7 +115,8 @@ func main() {
 			buttons.AddItem(tview.NewButton("Next").SetSelectedFunc(func() {
 				pages.SwitchToPage(fmt.Sprintf("%v", (page+1)%pages.GetPageCount()))
 			}), 0, 1, false)
-			flex.AddItem(messagesBox, 0, 6, true)
+			// flex.AddItem(messagesBox, 0, 6, true)
+			flex.AddItem(innerFlex, 0, 6, true)
 			flex.AddItem(inputBox, 0, 1, false)
 			flex.AddItem(buttons, 0, 1, false)
 			flex.SetBorder(true)
@@ -141,7 +151,7 @@ func rebuildMessagesList(ctx context.Context, client valkey.Client, app *tview.A
 	//but for now I have them hard coded to make it easier
 	keys := userChatWindows[username]
 	for _, key := range keys {
-		var stringBuilder strings.Builder
+		// var stringBuilder strings.Builder
 		valkeyResponse, err := client.Do(ctx, client.B().Xrevrange().Key(key).End("+").Start("-").Count(10).Build()).AsXRange()
 		if err != nil {
 			panic(err)
@@ -152,11 +162,15 @@ func rebuildMessagesList(ctx context.Context, client valkey.Client, app *tview.A
 			if entry.FieldValues["message"] == "" {
 				continue
 			} else {
-				stringBuilder.WriteString(entry.FieldValues["message"] + "\n")
+				messageBox := tview.NewTextView()
+				messageBox.SetTextColor(tcell.ColorLightGreen)
+				messageBox.SetText(entry.FieldValues["message"])
+				messageBoxes[key].AddItem(messageBox, 1, 6, false)
+				// stringBuilder.WriteString(entry.FieldValues["message"] + "\n")
 			}
 		}
-		messageBoxes[key].SetText(stringBuilder.String())
-		messageBoxes[key].ScrollToEnd()
+		// messageBoxes[key].SetText(stringBuilder.String())
+		// messageBoxes[key].ScrollToEnd()
 	}
 }
 
@@ -179,8 +193,10 @@ func receiveMessages(ctx context.Context, client valkey.Client, app *tview.Appli
 			panic(err)
 		}
 		for chatKey, message := range response {
-			messageBoxes[chatKey].SetText(messageBoxes[chatKey].GetText(true) + "\n" + message[0].FieldValues["message"])
-			messageBoxes[chatKey].ScrollToEnd()
+			textView := tview.NewTextView()
+			textView.SetText(message[0].FieldValues["message"])
+			textView.SetTextColor(tcell.ColorLightGreen)
+			messageBoxes[chatKey].AddItem(textView, 1, 6, false)
 		}
 		app.Draw()
 	}
