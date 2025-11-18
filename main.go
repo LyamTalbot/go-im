@@ -145,6 +145,9 @@ func main() {
 	//once they're recieved we handle them, update the correct parts of the UI, store them seperately based on where they're from, etc.
 }
 
+func createChatWindows(pageContainer *tview.Pages, chats map[string][]string) {
+}
+
 func rebuildMessagesList(ctx context.Context, client valkey.Client, app *tview.Application) {
 	//I need to do xrevrange for every chat]
 	//the chats are stored in <username>_chats.csv
@@ -164,6 +167,17 @@ func rebuildMessagesList(ctx context.Context, client valkey.Client, app *tview.A
 			} else {
 				messageBox := tview.NewTextView()
 				messageBox.SetTextColor(tcell.ColorLightGreen)
+				messageBox.SetFocusFunc(func() {
+					//this was just to experiment and see if I could set focus on the message boxes within the
+					//flex container. as it turns out I can.
+					//I'll be able to use this later if I want to remove or edit messages because I'll have the index of the message.
+					messageBox.SetBackgroundColor(tcell.ColorLightGreen)
+					messageBox.SetTextColor(tcell.ColorBlack)
+				})
+				messageBox.SetBlurFunc(func() {
+					messageBox.SetBackgroundColor(tcell.ColorBlack)
+					messageBox.SetTextColor(tcell.ColorLightGreen)
+				})
 				messageBox.SetText(entry.FieldValues["message"])
 				messageBoxes[key].AddItem(messageBox, 1, 6, false)
 				// stringBuilder.WriteString(entry.FieldValues["message"] + "\n")
