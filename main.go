@@ -32,6 +32,7 @@ var messages = make([]string, 0)
 var app = tview.NewApplication()
 var flex = tview.NewFlex()
 var inputBox = tview.NewInputField().SetLabel("Enter a Message: ").SetFieldTextColor(tcell.ColorGreen)
+var flexRoot = tview.NewFlex()
 var messagesBox = tview.NewTextView()
 var pages = tview.NewPages()
 
@@ -88,6 +89,15 @@ func main() {
 
 	ctx := context.Background()
 
+	conversations := tview.NewList()
+	conversations.SetBorder(true)
+	for index, conversation := range userChatWindows[username] {
+		conversations.AddItem(conversation, "", rune(0), func() {
+			pages.SwitchToPage(fmt.Sprintf("%v", index))
+		})
+	}
+	flexRoot.AddItem(conversations, 0, 1, false)
+	flexRoot.AddItem(pages, 0, 8, false)
 	for page := 0; page < len(userChatWindows[username]); page++ {
 		func(page int) {
 			flex := tview.NewFlex()
@@ -108,17 +118,17 @@ func main() {
 				}
 				inputBox.SetText("")
 			})
-			buttons := tview.NewFlex()
-			buttons.AddItem(tview.NewButton("Quit").SetSelectedFunc(func() {
-				app.Stop()
-			}), 0, 1, false)
-			buttons.AddItem(tview.NewButton("Next").SetSelectedFunc(func() {
-				pages.SwitchToPage(fmt.Sprintf("%v", (page+1)%pages.GetPageCount()))
-			}), 0, 1, false)
+			// buttons := tview.NewFlex()
+			// buttons.AddItem(tview.NewButton("Quit").SetSelectedFunc(func() {
+			// 	app.Stop()
+			// }), 0, 1, false)
+			// buttons.AddItem(tview.NewButton("Next").SetSelectedFunc(func() {
+			// 	pages.SwitchToPage(fmt.Sprintf("%v", (page+1)%pages.GetPageCount()))
+			// }), 0, 1, false)
 			// flex.AddItem(messagesBox, 0, 6, true)
 			flex.AddItem(innerFlex, 0, 6, true)
 			flex.AddItem(inputBox, 0, 1, false)
-			flex.AddItem(buttons, 0, 1, false)
+			// flex.AddItem(buttons, 0, 1, false)
 			flex.SetBorder(true)
 			pages.AddPage(fmt.Sprintf("%v", page),
 				flex, true, true)
@@ -129,7 +139,8 @@ func main() {
 	//this way we will still recieve messages
 	rebuildMessagesList(ctx, client, app)
 	go receiveMessages(ctx, client, app)
-	if err := app.SetRoot(pages, true).EnableMouse(true).Run(); err != nil {
+	//replace pages with grid?
+	if err := app.SetRoot(flexRoot, true).EnableMouse(true).Run(); err != nil {
 		panic(err)
 	}
 	// if err := app.SetRoot(flex, true).EnableMouse(true).Run(); err != nil {
