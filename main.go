@@ -14,19 +14,35 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/google/uuid"
 	"github.com/rivo/tview"
 	"github.com/valkey-io/valkey-go"
 )
 
 // message struct so I can marshall and unmarshall messages and have a little bit more information?
 // will make it easier to construct and deconstruct/parse messages
-type Message_t struct {
+type Message struct {
 	Username string
 	Message  string
 	Time     time.Time
 }
 
-var messages = make([]string, 0)
+type Data struct {
+	ChatKeys map[string][]string
+}
+
+type Friend struct {
+	Username          string
+	ChatKey           string
+	MostRecentMessage string
+}
+
+type UserData struct {
+	Username string
+	Friends  []string
+}
+
+// var messages = make([]string, 0)
 
 // tview
 var app = tview.NewApplication()
@@ -37,19 +53,19 @@ var messagesBox = tview.NewTextView()
 var pages = tview.NewPages()
 
 // Persistence Stuff
-var filePath = "./stream_id_records.csv"
-var latestStreamIDs map[string]string
+// var filePath = "./stream_id_records.csv"
+// var latestStreamIDs map[string]string
 
 // chatDataStores
-var messageHistories = make(map[string]string)
 
 // map of users (testing purposes just so I gen-generate the stream names and chat window names)
 // this will need to be moved to valkey and retreived if we don't have local copy
-var userChatWindows = map[string][]string{
-	"ant":   {"ant:louis", "ant:lyam"},
-	"louis": {"ant:louis", "louis:lyam"},
-	"lyam":  {"ant:lyam", "louis:lyam"},
-}
+//
+//	var userChatWindows = map[string][]string{
+//		"ant":   {"ant:louis", "ant:lyam"},
+//		"louis": {"ant:louis", "louis:lyam"},
+//		"lyam":  {"ant:lyam", "louis:lyam"},
+//	}
 var username string
 
 // var messageBoxes = make(map[string]*tview.TextView)
@@ -59,18 +75,8 @@ var username string
 // make it a map[string]tview.Flex
 var messageBoxes = make(map[string]*tview.Flex)
 
-var logPath = "./test_log.txt"
-var logFile = os.File{}
-
 func main() {
-	latestStreamIDs = buildStreamIDMap(filePath)
 	messagesBox.SetBackgroundColor(tcell.ColorBlack)
-	logFile, err := os.OpenFile(logPath, os.O_RDWR, 0660)
-	if err != nil {
-		fmt.Println("Cannot open error log file")
-		panic(err)
-	}
-	os.Stderr = logFile
 	reader := bufio.NewScanner(os.Stdin)
 	fmt.Print("Please enter your username: ")
 	reader.Scan()
@@ -80,6 +86,9 @@ func main() {
 	reader.Scan()
 	password := reader.Text()
 
+	newUUID := uuid.New()
+	fmt.Println(newUUID.String())
+
 	client, err := valkey.NewClient(valkey.ClientOption{InitAddress: []string{"192.168.50.238:6379"}, Username: username, Password: password, DisableCache: true})
 	if err != nil {
 		println("Client error")
@@ -88,31 +97,60 @@ func main() {
 	defer client.Close()
 
 	ctx := context.Background()
+	latestStreamIDs := buildStreamIDMap(username)
+	userChatWindows := make([]string, 0)
+	for k := range latestStreamIDs {
+		userChatWindows = append(userChatWindows, k)
+	}
 
-	conversations := tview.NewList()
+	// conversations := tview.NewList()
+	// conversations.SetBorder(true)
+	// for index, conversation := range userChatWindows {
+	// 	conversations.AddItem(conversation, "", rune(0), func() {
+	// 		pages.SwitchToPage(fmt.Sprintf("%v", index))
+	// 	})
+	// }
+	conversations := tview.NewFlex()
 	conversations.SetBorder(true)
-	for index, conversation := range userChatWindows[username] {
-		conversations.AddItem(conversation, "", rune(0), func() {
+	conversations.SetBackgroundColor(tcell.ColorBlack.TrueColor())
+	conversations.SetDirection(tview.FlexRow)
+	for index, conversation := range userChatWindows {
+		button := tview.NewButton(conversation)
+		button.SetStyle(tcell.StyleDefault.Background(tcell.ColorBlack.TrueColor()))
+		button.SetBackgroundColor(tcell.ColorBlack)
+		button.SetBackgroundColorActivated(tcell.ColorLightGreen)
+		button.SetLabelColorActivated(tcell.ColorBlack)
+		button.SetLabelColor(tcell.ColorLightGreen)
+		button.SetTitleAlign(tview.AlignLeft)
+		// button.SetSelectedFunc(func() {
+		// 	pages.SwitchToPage(fmt.Sprintf("%v", index))
+		// })
+		button.SetFocusFunc(func() {
 			pages.SwitchToPage(fmt.Sprintf("%v", index))
 		})
+		conversations.AddItem(button, 1, 1, false)
 	}
 	flexRoot.AddItem(conversations, 0, 1, false)
 	flexRoot.AddItem(pages, 0, 8, false)
-	for page := 0; page < len(userChatWindows[username]); page++ {
+
+	for page := 0; page < len(userChatWindows); page++ {
 		func(page int) {
 			flex := tview.NewFlex()
+			flex.SetBackgroundColor(tcell.ColorBlack.TrueColor())
 			flex.SetDirection(tview.FlexRow)
-			flex.SetTitle(userChatWindows[username][page])
+			flex.SetTitle(userChatWindows[page])
 			// messagesBox := tview.NewTextView()
 			// messageBoxes[userChatWindows[username][page]] = *tview.NewFlex()
 			// messagesBox.SetTextColor(tcell.ColorLightGreen)
 			innerFlex := tview.NewFlex()
 			innerFlex.SetDirection(tview.FlexRow)
-			messageBoxes[userChatWindows[username][page]] = innerFlex
+			messageBoxes[userChatWindows[page]] = innerFlex
 			inputBox := tview.NewInputField().SetLabel("Enter a Message: ").SetFieldTextColor(tcell.ColorGreen)
+			inputBox.SetFieldBackgroundColor(tcell.ColorBlack)
+			inputBox.SetLabelColor(tcell.ColorLightGreen)
 			inputBox.SetDoneFunc(func(key tcell.Key) {
 				message := inputBox.GetText()
-				err := client.Do(ctx, client.B().Xadd().Key(userChatWindows[username][page]).Id("*").FieldValue().FieldValue("message", message).Build()).Error()
+				err := client.Do(ctx, client.B().Xadd().Key(userChatWindows[page]).Id("*").FieldValue().FieldValue("message", message).Build()).Error()
 				if err != nil {
 					panic(err)
 				}
@@ -137,8 +175,8 @@ func main() {
 
 	//spin off message receving into it's own go routine
 	//this way we will still recieve messages
-	rebuildMessagesList(ctx, client, app)
-	go receiveMessages(ctx, client, app)
+	rebuildMessagesList(ctx, client, app, userChatWindows)
+	go receiveMessages(ctx, client, app, userChatWindows)
 	//replace pages with grid?
 	if err := app.SetRoot(flexRoot, true).EnableMouse(true).Run(); err != nil {
 		panic(err)
@@ -159,11 +197,11 @@ func main() {
 func createChatWindows(pageContainer *tview.Pages, chats map[string][]string) {
 }
 
-func rebuildMessagesList(ctx context.Context, client valkey.Client, app *tview.Application) {
+func rebuildMessagesList(ctx context.Context, client valkey.Client, app *tview.Application, userChatWindows []string) {
 	//I need to do xrevrange for every chat]
 	//the chats are stored in <username>_chats.csv
 	//but for now I have them hard coded to make it easier
-	keys := userChatWindows[username]
+	keys := userChatWindows
 	for _, key := range keys {
 		// var stringBuilder strings.Builder
 		valkeyResponse, err := client.Do(ctx, client.B().Xrevrange().Key(key).End("+").Start("-").Count(10).Build()).AsXRange()
@@ -178,6 +216,7 @@ func rebuildMessagesList(ctx context.Context, client valkey.Client, app *tview.A
 			} else {
 				messageBox := tview.NewTextView()
 				messageBox.SetTextColor(tcell.ColorLightGreen)
+				messageBox.SetWrap(true)
 				messageBox.SetFocusFunc(func() {
 					//this was just to experiment and see if I could set focus on the message boxes within the
 					//flex container. as it turns out I can.
@@ -199,7 +238,7 @@ func rebuildMessagesList(ctx context.Context, client valkey.Client, app *tview.A
 	}
 }
 
-func receiveMessages(ctx context.Context, client valkey.Client, app *tview.Application) {
+func receiveMessages(ctx context.Context, client valkey.Client, app *tview.Application, userChatWindows []string) {
 	keys := make([]string, 0)
 	//Need to make a list of IDs that is the same length as the number of streams we want to read from.
 	//I might try to find another way to do this
@@ -209,11 +248,11 @@ func receiveMessages(ctx context.Context, client valkey.Client, app *tview.Appli
 	// 	keys = append(keys, "$")
 	// }
 	//this is a bit more concise and cleaner to read to lets use this.
-	for i := 0; i < len(userChatWindows[username]); i++ {
+	for i := 0; i < len(userChatWindows); i++ {
 		keys = append(keys, "$")
 	}
 	for {
-		response, err := client.Do(ctx, client.B().Xread().Block(0).Streams().Key(userChatWindows[username]...).Id(keys...).Build()).AsXRead()
+		response, err := client.Do(ctx, client.B().Xread().Block(0).Streams().Key(userChatWindows...).Id(keys...).Build()).AsXRead()
 		if err != nil {
 			panic(err)
 		}
@@ -248,14 +287,17 @@ func readFromStream(stream string, ctx context.Context, client valkey.Client, ap
 		if err != nil {
 			fmt.Println(err.Error())
 		}
-		parsedMessage := message["chat"][0].FieldValues["writer"]
-		messages = append(messages, parsedMessage)
+		// parsedMessage := message["chat"][0].FieldValues["writer"]
+		// messages = append(messages, parsedMessage)
 	}
 }
 
-func buildStreamIDMap(filePath string) map[string]string {
+//need to listen to subscriptions
+//what's the channel name going to be? let's make it
+
+func buildStreamIDMap(username string) map[string]string {
 	var lastestStreamIDs = make(map[string]string)
-	file, err := os.Open(filePath)
+	file, err := os.Open(fmt.Sprintf("%v_chats.csv", username))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -296,7 +338,7 @@ func saveStreamIDs(streamLatestIDs map[string]string) {
 		streamIDsArray = append(streamIDsArray, []string{key, strings.TrimSpace(value)})
 	}
 
-	file, err := os.OpenFile(filePath, os.O_RDWR, 0660)
+	file, err := os.OpenFile(fmt.Sprintf("%v_chats.csv", username), os.O_RDWR, 0660)
 	if err != nil {
 		panic(err)
 	}
